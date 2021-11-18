@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"log"
@@ -38,25 +39,28 @@ func printPacketInfo(action string, cp packets.ControlPacket, err error) {
 	fmt.Println()
 }
 
-func clientInterceptor(cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
+func clientInterceptor(ctx context.Context, cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
 	printPacketInfo("RCVD", cp, err)
 
 	return cp, err
 }
 
-func brokerInterceptor(cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
+func brokerInterceptor(ctx context.Context, cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
 	printPacketInfo("SENT", cp, err)
 
 	return cp, err
 }
 
-func (server *Server) serve(clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
+func (server *Server) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	if server.IsDebug {
 		fmt.Printf("New connection: %v\n", clientConn.RemoteAddr())
 		fmt.Printf("Connecting to: %s\n", server.Broker)
 	}
 
-	brokerConn, err := server.getBrokerConn(w, r)
+	brokerConn, err := server.getBrokerConn(ctx, w, r)
 	if err != nil {
 		return err
 	}
@@ -64,17 +68,19 @@ func (server *Server) serve(clientConn net.Conn, w http.ResponseWriter, r *http.
 	defer brokerConn.Close()
 	defer clientConn.Close()
 
-	proxy := &Proxy{
-		ClientConn:        clientConn,
-		ClientInterceptor: clientInterceptor,
-		BrokerConn:        brokerConn,
-		BrokerInterceptor: brokerInterceptor,
-	}
+	// proxy := &Proxy{
+	// 	ClientConn:        clientConn,
+	// 	ClientInterceptor: clientInterceptor,
+	// 	BrokerConn:        brokerConn,
+	// 	BrokerInterceptor: brokerInterceptor,
+	// }
 
-	return proxy.Start()
+	//return proxy.Start(ctx)
+
+	return nil
 }
 
-func (server *Server) getBrokerConn(w http.ResponseWriter, r *http.Request) (net.Conn, error) {
+func (server *Server) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error) {
 	// first open a connection to the remote broker
 	uri, err := url.Parse(server.Broker)
 	if err != nil {
@@ -106,7 +112,7 @@ const (
 )
 
 // serve a connected MQTT Websocket client
-func (server *Server) serveWebsocket(w http.ResponseWriter, r *http.Request) error {
+func (server *Server) serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:   1024,
 		WriteBufferSize:  1024,
@@ -129,14 +135,14 @@ func (server *Server) serveWebsocket(w http.ResponseWriter, r *http.Request) err
 
 	connector.SetDeadline(time.Time{})
 
-	go server.serve(connector, w, r)
+	go server.serve(ctx, connector, w, r)
 
 	return nil
 }
 
-func (server *Server) startWebsocketServer() {
+func (server *Server) startWebsocketServer(ctx context.Context) {
 	http.HandleFunc("/mqtt", func(w http.ResponseWriter, r *http.Request) {
-		err := server.serveWebsocket(w, r)
+		err := server.serveWebsocket(ctx, w, r)
 		if err != nil {
 			log.Println(err)
 		}
@@ -148,7 +154,7 @@ func (server *Server) startWebsocketServer() {
 	}
 }
 
-func (server *Server) startTCPServer() {
+func (server *Server) startTCPServer(ctx context.Context) {
 	if server.TCPListen != "" {
 		listener, err := net.Listen("tcp", server.TCPListen)
 		if err != nil {
@@ -161,12 +167,12 @@ func (server *Server) startTCPServer() {
 				panic(err)
 			}
 
-			go server.serve(conn, nil, nil)
+			go server.serve(ctx, conn, nil, nil)
 		}
 	}
 }
 
-func (server *Server) Start() {
+func (server *Server) Start(ctx context.Context) {
 	if server.IsDebug {
 		fmt.Println("verbose mode enabled")
 	}
@@ -175,7 +181,7 @@ func (server *Server) Start() {
 		fmt.Println("trace is enabled")
 	}
 
-	go server.startTCPServer()
+	go server.startTCPServer(ctx)
 
-	server.startWebsocketServer()
+	server.startWebsocketServer(ctx)
 }

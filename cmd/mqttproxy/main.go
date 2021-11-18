@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 )
 
 func main() {
-
 	server := &Server{}
 
 	fmt.Println("mqttproxy: An MQTT proxy")
@@ -17,9 +17,10 @@ func main() {
 	flag.StringVar(&server.Broker, "b", "", "the MQTT address and port to connect to the MQTT server")
 	flag.BoolVar(&server.IsDebug, "v", false, "dumps verbose debug information")
 	flag.BoolVar(&server.IsTrace, "t", false, "trace every communication to JSON files")
+
 	flag.Parse()
 
 	fmt.Printf("%v\n", server)
 
-	server.Start()
+	server.Start(context.Background())
 }
