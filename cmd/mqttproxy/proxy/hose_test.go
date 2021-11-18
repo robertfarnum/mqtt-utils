@@ -77,7 +77,11 @@ func Test_Hose(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			err := flow(tt.args.ctx, tt.args.hose)
 			if err != nil && tt.wantErr != nil && err.Error() != tt.wantErr.Error() {
-				t.Errorf("Hose() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("flow() error = %v, wantErr %v", err, tt.wantErr)
+			} else if err != nil && tt.wantErr == nil {
+				t.Errorf("flow() error = %v not expected", err)
+			} else if err == nil && tt.wantErr != nil {
+				t.Errorf("flow() error = %v not returned", tt.wantErr)
 			}
 		})
 	}

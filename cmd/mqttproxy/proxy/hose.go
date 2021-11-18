@@ -7,27 +7,31 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
-// Gas wraps an MQTT control packet or error
-type Gas struct {
+// Packet wraps an MQTT control packet or error
+type Packet struct {
 	cp  packets.ControlPacket
 	err error
 }
 
-// Nozzle is the channel type for the gas output channel
-type Nozzle chan Gas
+// Nozzle is the channel type for the Packet output channel
+type Nozzle chan Packet
 
-// Hose represents the MQTT network connection to channel Hose
+// Hose represents the MQTT network connection to packet channel conduit
 type Hose struct {
 	in  io.Reader
-	out chan Gas
+	out Nozzle
 }
 
-// NewHose creates a Hose from an input network connection to an output channel
+// NewHose creates a Hose from an input network connection and build a packet output channel (Nozzle)
 func NewHose(in io.Reader) Hose {
 	return Hose{
 		in:  in,
 		out: make(Nozzle, 1024),
 	}
+}
+
+func (hose Hose) GetNozzle() Nozzle {
+	return hose.out
 }
 
 // flow reads an MQTT ControlPacket from the inbound io.Reader and forwards the result to the outbound Nozzle channel.
@@ -39,7 +43,7 @@ func flow(ctx context.Context, Hose Hose) error {
 			return err
 		}
 
-		gas := Gas{
+		packet := Packet{
 			cp:  cp,
 			err: err,
 		}
@@ -47,7 +51,7 @@ func flow(ctx context.Context, Hose Hose) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case Hose.out <- gas:
+		case Hose.out <- packet:
 		}
 	}
 }
