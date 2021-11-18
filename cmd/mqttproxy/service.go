@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type Server struct {
+type Service struct 
 	TCPListen string
 	WSListen  string
 	Broker    string
@@ -51,16 +51,16 @@ func brokerInterceptor(ctx context.Context, cp packets.ControlPacket, err error)
 	return cp, err
 }
 
-func (server *Server) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
+func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error{
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if server.IsDebug {
+	if service.IsDebug 
 		fmt.Printf("New connection: %v\n", clientConn.RemoteAddr())
-		fmt.Printf("Connecting to: %s\n", server.Broker)
+		fmt.Printf("Connecting to: %s\n", service.Broker
 	}
 
-	brokerConn, err := server.getBrokerConn(ctx, w, r)
+	brokerConn, err := service.getBrokerConn(ctx, w, r
 	if err != nil {
 		return err
 	}
@@ -80,9 +80,9 @@ func (server *Server) serve(ctx context.Context, clientConn net.Conn, w http.Res
 	return nil
 }
 
-func (server *Server) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error) {
+func (service *Service) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error){
 	// first open a connection to the remote broker
-	uri, err := url.Parse(server.Broker)
+	uri, err := url.Parse(service.Broker
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ const (
 )
 
 // serve a connected MQTT Websocket client
-func (server *Server) serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
+func (service *Service) serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request) error{
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:   1024,
 		WriteBufferSize:  1024,
@@ -135,28 +135,28 @@ func (server *Server) serveWebsocket(ctx context.Context, w http.ResponseWriter,
 
 	connector.SetDeadline(time.Time{})
 
-	go server.serve(ctx, connector, w, r)
+	go service.serve(ctx, connector, w, r
 
 	return nil
 }
 
-func (server *Server) startWebsocketServer(ctx context.Context) {
+func (service *Service) startWebsocketService(ctx context.Context {
 	http.HandleFunc("/mqtt", func(w http.ResponseWriter, r *http.Request) {
-		err := server.serveWebsocket(ctx, w, r)
+		err := service.serveWebsocket(ctx, w, r
 		if err != nil {
 			log.Println(err)
 		}
 	})
 
-	err := http.ListenAndServe(server.WSListen, nil)
+	err := http.ListenAndServe(service.WSListen, nil
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (server *Server) startTCPServer(ctx context.Context) {
-	if server.TCPListen != "" {
-		listener, err := net.Listen("tcp", server.TCPListen)
+func (service *Service) startTCPService(ctx context.Context {
+	if service.TCPListen != "" 
+		listener, err := net.Listen("tcp", service.TCPListen
 		if err != nil {
 			panic(err)
 		}
@@ -167,21 +167,21 @@ func (server *Server) startTCPServer(ctx context.Context) {
 				panic(err)
 			}
 
-			go server.serve(ctx, conn, nil, nil)
+			go service.serve(ctx, conn, nil, nil
 		}
 	}
 }
 
-func (server *Server) Start(ctx context.Context) {
-	if server.IsDebug {
+func (service *Service) Start(ctx context.Context){
+	if service.IsDebug 
 		fmt.Println("verbose mode enabled")
 	}
 
-	if server.IsTrace {
+	if service.IsTrace 
 		fmt.Println("trace is enabled")
 	}
 
-	go server.startTCPServer(ctx)
+	go service.startTCPService(ct)
 
-	server.startWebsocketServer(ctx)
+	service.startWebsocketService(ct)
 }
