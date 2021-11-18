@@ -3,13 +3,13 @@ package proxy
 import (
 	"context"
 	"net"
-	"sync"
 )
 
 // Station
 type Station struct {
-	client Pump
-	broker Pump
+	client *Pump
+	broker *Pump
+	cancel context.CancelFunc
 }
 
 // NewStation create a new bi-directional communication channel between the client and broker
@@ -21,63 +21,26 @@ func NewStation(client net.Conn, broker net.Conn) Station {
 }
 
 // GetClientChan returns the client output channel
-func (s Station) GetClientChan() Nozzle {
-	return s.client.hose.out
+func (s Station) GetClientPump() *Pump {
+	return s.client
 }
 
 // GetBrokerChan returns the broker output channel
-func (s Station) GetBrokerChan() Nozzle {
-	return s.broker.hose.out
+func (s Station) GetBrokerPump() *Pump {
+	return s.broker
 }
 
 // Start the pump; stops only after the pipes are drained
-func (s *Station) Open(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
+func (s *Station) Run(ctx context.Context, cancel context.CancelFunc) error {
+	go func() {
+		s.client.Run(ctx)
+		cancel()
+	}()
 
-	defer cancel()
-	defer s.client.conn.Close()
-	defer s.broker.conn.Close()
-
-	//errs := make([]error, 2)
-	wg := &sync.WaitGroup{}
-
-	wg.Add(1)
-	flow(ctx, s.client.hose)
-
-	wg.Add(2)
-	flow(ctx, s.broker.hose)
-
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return nil
-	// 		case clientData := <-clientChan:
-	// 			if clientData.err != nil {
-	// 				fmt.Println(clientData.err.Error())
-	// 				return clientData.err
-	// 			}
-
-	// 			clientData.cp.Write(proxy.BrokerConn)
-	// 		}
-	// 	}
-	// }()
-
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return nil
-	// 		case brokerData := <-brokerChan:
-	// 			if brokerData.err != nil {
-	// 				fmt.Println(brokerData.err.Error())
-	// 				return brokerData.err
-	// 			}
-
-	// 			brokerData.cp.Write(proxy.ClientConn)
-	// 		}
-	// 	}
-	// }()
+	go func() {
+		s.broker.Run(ctx)
+		cancel()
+	}()
 
 	return nil
 }

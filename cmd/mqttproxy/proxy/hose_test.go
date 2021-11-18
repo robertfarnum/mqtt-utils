@@ -1,7 +1,6 @@
 package proxy
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -26,21 +25,36 @@ type ConnectPacketReader struct {
 }
 
 func (r ConnectPacketReader) Read(p []byte) (n int, err error) {
-	packet := packets.ConnectPacket{
-		Username: "test",
-	}
+	connectPacket := packets.NewControlPacket(packets.Connect).(*packets.ConnectPacket)
+	connectPacket.Username = "test"
 
-	b := bytes.NewBuffer(p)
+	w := NewWriter(p)
 
-	err = packet.Write(b)
+	err = connectPacket.Write(w)
 	if err != nil {
 		return 0, err
 	}
 
-	return b.Len(), nil
+	return len(p), nil
 }
 
-func Test_Hose(t *testing.T) {
+type Writer struct {
+	p []byte
+}
+
+func NewWriter(p []byte) Writer {
+	return Writer{
+		p: p,
+	}
+}
+
+func (w Writer) Write(p []byte) (n int, err error) {
+	len := copy(w.p, p)
+
+	return len, nil
+}
+
+func TestHose(t *testing.T) {
 	timeoutCtx, timeoutCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	cancelCtx, cancelCancel := context.WithCancel(context.TODO())
 
@@ -59,7 +73,7 @@ func Test_Hose(t *testing.T) {
 			args: args{
 				ctx:    timeoutCtx,
 				cancel: timeoutCancel,
-				hose:   NewHose(SleepReader{}),
+				hose:   NewHose(SleepReader{}, nil),
 			},
 			wantErr: fmt.Errorf("timeout"),
 		},
@@ -68,14 +82,15 @@ func Test_Hose(t *testing.T) {
 			args: args{
 				ctx:    cancelCtx,
 				cancel: cancelCancel,
-				hose:   NewHose(ConnectPacketReader{}),
+				hose:   NewHose(ConnectPacketReader{}, nil),
 			},
 			wantErr: nil,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := flow(tt.args.ctx, tt.args.hose)
+			err := tt.args.hose.Flow(tt.args.ctx)
 			if err != nil && tt.wantErr != nil && err.Error() != tt.wantErr.Error() {
 				t.Errorf("flow() error = %v, wantErr %v", err, tt.wantErr)
 			} else if err != nil && tt.wantErr == nil {

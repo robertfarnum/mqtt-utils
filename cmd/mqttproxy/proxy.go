@@ -1,27 +1,38 @@
-package proxy
+package main
 
 import (
 	"context"
+	"fmt"
+	"net"
+
+	"github.com/robertfarnum/mqtt-utils/cmd/mqttproxy/proxy"
 )
 
-type Proxy struct{}
+type Proxy struct {
+	client net.Conn
+	broker net.Conn
+}
 
 func (p Proxy) Start(ctx context.Context) error {
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return nil
-	// 		case clientData := <-clientChan:
-	// 			if clientData.err != nil {
-	// 				fmt.Println(clientData.err.Error())
-	// 				return clientData.err
-	// 			}
+	s := proxy.NewStation(p.client, p.broker)
+	clientNozzle := s.GetClientPump().GetNozzle()
+	brokerNozzle := s.GetBrokerPump().GetNozzle()
 
-	// 			clientData.cp.Write(proxy.BrokerConn)
-	// 		}
-	// 	}
-	// }()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case packet := <-clientNozzle:
+				if packet.GetError() != nil {
+					fmt.Println(clientData.err.Error())
+					return clientData.err
+				}
+
+				clientData.cp.Write(proxy.BrokerConn)
+			}
+		}
+	}()
 
 	// go func() {
 	// 	for {
