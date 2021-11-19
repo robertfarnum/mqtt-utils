@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"time"
 
-	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
+	"github.com/robertfarnum/mqtt-utils/pkg/network"
 	"github.com/robertfarnum/mqtt-utils/pkg/proxy"
 )
 
@@ -122,7 +122,7 @@ func (service *Service) getBrokerConn(_ context.Context, w http.ResponseWriter, 
 		InsecureSkipVerify: true,
 	}
 
-	conn, err := mqtt.OpenConnection(uri, tlsConfig, time.Duration(time.Second*10), header, nil)
+	conn, err := network.OpenConnection(uri, tlsConfig, time.Duration(time.Second*10), header, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func (service *Service) serveWebsocket(ctx context.Context, w http.ResponseWrite
 
 	conn.SetPongHandler(func(string) error { conn.SetReadDeadline(time.Now().Add(pongWait)); return nil })
 
-	connector := &mqtt.WebsocketConnector{
+	connector := &network.WebsocketConnector{
 		Conn: conn,
 	}
 

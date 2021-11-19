@@ -7,6 +7,5 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.3.5
 	github.com/fatih/color v1.12.0
 	github.com/gorilla/websocket v1.4.2
+	golang.org/x/net v0.0.0-20201110031124-69a78807bb2b
 )
-
-replace github.com/eclipse/paho.mqtt.golang => ../paho.mqtt.golang
