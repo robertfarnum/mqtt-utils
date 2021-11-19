@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-type Service struct 
+type Service struct {
 	TCPListen string
 	WSListen  string
 	Broker    string
@@ -39,28 +39,16 @@ func printPacketInfo(action string, cp packets.ControlPacket, err error) {
 	fmt.Println()
 }
 
-func clientInterceptor(ctx context.Context, cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
-	printPacketInfo("RCVD", cp, err)
-
-	return cp, err
-}
-
-func brokerInterceptor(ctx context.Context, cp packets.ControlPacket, err error) (packets.ControlPacket, error) {
-	printPacketInfo("SENT", cp, err)
-
-	return cp, err
-}
-
-func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error{
+func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if service.IsDebug 
+	if service.IsDebug {
 		fmt.Printf("New connection: %v\n", clientConn.RemoteAddr())
-		fmt.Printf("Connecting to: %s\n", service.Broker
+		fmt.Printf("Connecting to: %s\n", service.Broker)
 	}
 
-	brokerConn, err := service.getBrokerConn(ctx, w, r
+	brokerConn, err := service.getBrokerConn(ctx, w, r)
 	if err != nil {
 		return err
 	}
@@ -68,21 +56,14 @@ func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.R
 	defer brokerConn.Close()
 	defer clientConn.Close()
 
-	// proxy := &Proxy{
-	// 	ClientConn:        clientConn,
-	// 	ClientInterceptor: clientInterceptor,
-	// 	BrokerConn:        brokerConn,
-	// 	BrokerInterceptor: brokerInterceptor,
-	// }
+	proxy := NewProxy(clientConn, brokerConn)
 
-	//return proxy.Start(ctx)
-
-	return nil
+	return proxy.Start(ctx)
 }
 
-func (service *Service) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error){
+func (service *Service) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error) {
 	// first open a connection to the remote broker
-	uri, err := url.Parse(service.Broker
+	uri, err := url.Parse(service.Broker)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +93,7 @@ const (
 )
 
 // serve a connected MQTT Websocket client
-func (service *Service) serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request) error{
+func (service *Service) serveWebsocket(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	var upgrader = websocket.Upgrader{
 		ReadBufferSize:   1024,
 		WriteBufferSize:  1024,
@@ -135,28 +116,31 @@ func (service *Service) serveWebsocket(ctx context.Context, w http.ResponseWrite
 
 	connector.SetDeadline(time.Time{})
 
-	go service.serve(ctx, connector, w, r
+	go func() {
+		err := service.serve(ctx, connector, w, r)
+		fmt.Printf("Finished serving client: %v\n", err)
+	}()
 
 	return nil
 }
 
-func (service *Service) startWebsocketService(ctx context.Context {
+func (service *Service) startWebsocketService(ctx context.Context) {
 	http.HandleFunc("/mqtt", func(w http.ResponseWriter, r *http.Request) {
-		err := service.serveWebsocket(ctx, w, r
+		err := service.serveWebsocket(ctx, w, r)
 		if err != nil {
 			log.Println(err)
 		}
 	})
 
-	err := http.ListenAndServe(service.WSListen, nil
+	err := http.ListenAndServe(service.WSListen, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (service *Service) startTCPService(ctx context.Context {
-	if service.TCPListen != "" 
-		listener, err := net.Listen("tcp", service.TCPListen
+func (service *Service) startTCPService(ctx context.Context) {
+	if service.TCPListen != "" {
+		listener, err := net.Listen("tcp", service.TCPListen)
 		if err != nil {
 			panic(err)
 		}
@@ -167,21 +151,24 @@ func (service *Service) startTCPService(ctx context.Context {
 				panic(err)
 			}
 
-			go service.serve(ctx, conn, nil, nil
+			go func() {
+				err := service.serve(ctx, conn, nil, nil)
+				fmt.Printf("Finished serving client: %v\n", err)
+			}()
 		}
 	}
 }
 
-func (service *Service) Start(ctx context.Context){
-	if service.IsDebug 
+func (service *Service) Start(ctx context.Context) {
+	if service.IsDebug {
 		fmt.Println("verbose mode enabled")
 	}
 
-	if service.IsTrace 
+	if service.IsTrace {
 		fmt.Println("trace is enabled")
 	}
 
-	go service.startTCPService(ct)
+	go service.startTCPService(ctx)
 
-	service.startWebsocketService(ct)
+	service.startWebsocketService(ctx)
 }

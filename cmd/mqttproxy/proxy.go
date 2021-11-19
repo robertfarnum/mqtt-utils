@@ -5,50 +5,82 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/robertfarnum/mqtt-utils/cmd/mqttproxy/proxy"
+	"github.com/robertfarnum/mqtt-utils/pkg/proxy"
 )
 
-type Proxy struct {
+// Proxy for client and broker
+type Proxy interface {
+	Start(ctx context.Context) error
+}
+
+// proxyImpl implements the Proxy interface
+type proxyImpl struct {
 	client net.Conn
 	broker net.Conn
 }
 
-func (p Proxy) Start(ctx context.Context) error {
+// NewProxy creates a new proxy between the client and broker
+func NewProxy(client net.Conn, broker net.Conn) Proxy {
+	return &proxyImpl{
+		client: client,
+		broker: broker,
+	}
+}
+
+func (p *proxyImpl) Start(ctx context.Context) error {
+	ctx, cancel := context.WithCancel(ctx)
+
 	s := proxy.NewStation(p.client, p.broker)
-	clientNozzle := s.GetClientPump().GetNozzle()
-	brokerNozzle := s.GetBrokerPump().GetNozzle()
 
 	go func() {
+		n := s.GetClientPump().Nozzle()
+
+	LOOP:
 		for {
 			select {
 			case <-ctx.Done():
-				return
-			case packet := <-clientNozzle:
-				if packet.GetError() != nil {
-					fmt.Println(clientData.err.Error())
-					return clientData.err
+				break LOOP
+			case pkt := <-n:
+				es := pkt.GetErrStatus()
+				if es != nil {
+					fmt.Println(es.Error())
+					return
 				}
 
-				clientData.cp.Write(proxy.BrokerConn)
+				cp := pkt.GetControlPacket()
+				err := pkt.GetErrStatus()
+				printPacketInfo("RCVD", cp, err)
+
+				cp.Write(p.broker)
 			}
 		}
 	}()
 
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return nil
-	// 		case brokerData := <-brokerChan:
-	// 			if brokerData.err != nil {
-	// 				fmt.Println(brokerData.err.Error())
-	// 				return brokerData.err
-	// 			}
+	go func() {
+		n := s.GetBrokerPump().Nozzle()
 
-	// 			brokerData.cp.Write(proxy.ClientConn)
-	// 		}
-	// 	}
-	// }()
+	LOOP:
+		for {
+			select {
+			case <-ctx.Done():
+				break LOOP
+			case pkt := <-n:
+				es := pkt.GetErrStatus()
+				if es != nil {
+					fmt.Println(es.Error())
+					return
+				}
 
-	return nil
+				cp := pkt.GetControlPacket()
+				err := pkt.GetErrStatus()
+				printPacketInfo("SENT", cp, err)
+
+				cp.Write(p.client)
+			}
+		}
+	}()
+
+	err := s.Run(ctx, cancel)
+
+	return err
 }

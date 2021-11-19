@@ -10,7 +10,7 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
-type Status error
+type ErrStatus error
 
 const (
 	// DefaultReadTimeout is the default read timeout for DefaultHostConfig
@@ -20,32 +20,44 @@ const (
 )
 
 var (
-	ErrClosed   Status = fmt.Errorf("closed")
-	ErrCanceled Status = fmt.Errorf("cancled")
-	ErrTimeout  Status = fmt.Errorf("timeout")
+	ErrClosed   ErrStatus = fmt.Errorf("closed")
+	ErrCanceled ErrStatus = fmt.Errorf("cancled")
+	ErrTimeout  ErrStatus = fmt.Errorf("timeout")
 )
 
-// Packet wraps an MQTT control packet or error
-type Packet struct {
+// Packet interface provides access to the control packet or error
+type Packet interface {
+	GetControlPacket() packets.ControlPacket
+	GetErrStatus() ErrStatus
+}
+
+// packetImpl wraps an MQTT control packet or error
+type packetImpl struct {
 	cp  packets.ControlPacket
 	err error
 }
 
 // GetControlPacket retrieves the control packet
-func (p *Packet) GetControlPacket() packets.ControlPacket {
+func (p *packetImpl) GetControlPacket() packets.ControlPacket {
 	return p.cp
 }
 
-// GetError retrieves the packet error
-func (p *Packet) GetError() error {
+// GetErrStatus retrieves the packet error
+func (p *packetImpl) GetErrStatus() ErrStatus {
 	return p.err
 }
 
 // Nozzle is the channel type for the Packet output channel
 type Nozzle chan Packet
 
-// Hose represents the MQTT network connection to packet channel (Nozzle)
-type Hose struct {
+// Hose is the interface to start a flow and get the nozzle (channel) to be sent Packet(s)
+type Hose interface {
+	GetNozzle() Nozzle
+	Flow(ctx context.Context) error
+}
+
+// hoseImpl represents the MQTT network connection to packet channel (Nozzle)
+type hoseImpl struct {
 	in     io.Reader
 	out    Nozzle
 	config HoseConfig
@@ -68,20 +80,20 @@ func NewHose(in io.Reader, config *HoseConfig) Hose {
 		config = DefaultHoseConfig
 	}
 
-	return Hose{
+	return &hoseImpl{
 		in:     in,
 		out:    make(Nozzle),
 		config: *config,
 	}
 }
 
-func (hose *Hose) GetNozzle() Nozzle {
-	return hose.out
+func (h *hoseImpl) GetNozzle() Nozzle {
+	return h.out
 }
 
 // flow reads an MQTT ControlPacket from the inbound io.Reader and forwards the result to the outbound Nozzle channel.
 // flow does not return until an error occurs or its cancelled
-func (h *Hose) Flow(ctx context.Context) error {
+func (h *hoseImpl) Flow(ctx context.Context) error {
 	for {
 		if in, ok := h.in.(net.Conn); ok {
 			err := in.SetReadDeadline(time.Now().Add(h.config.ReadTimeout))
@@ -99,7 +111,7 @@ func (h *Hose) Flow(ctx context.Context) error {
 			return err
 		}
 
-		p := Packet{
+		p := &packetImpl{
 			cp:  cp,
 			err: err,
 		}

@@ -1,41 +1,42 @@
-package mock
+package proxy_test
 
 import (
 	"net"
 	"time"
 )
 
-type MockNetConn struct {
+// NetConn test structure
+type NetConn struct {
 	net.Conn
 }
 
 // Read reads data from the connection.
 // Read can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetReadDeadline.
-func (nc *MockNetConn) Read(b []byte) (n int, err error) {
+func (nc *NetConn) Read(b []byte) (n int, err error) {
 	return 0, nil
 }
 
 // Write writes data to the connection.
 // Write can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetWriteDeadline.
-func (nc *MockNetConn) Write(b []byte) (n int, err error) {
+func (nc *NetConn) Write(b []byte) (n int, err error) {
 	return 0, nil
 }
 
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked and return errors.
-func (nc *MockNetConn) Close() error {
+func (nc *NetConn) Close() error {
 	return nil
 }
 
 // LocalAddr returns the local network address.
-func (nc *MockNetConn) LocalAddr() net.Addr {
+func (nc *NetConn) LocalAddr() net.Addr {
 	return nil
 }
 
 // RemoteAddr returns the remote network address.
-func (nc *MockNetConn) RemoteAddr() net.Addr {
+func (nc *NetConn) RemoteAddr() net.Addr {
 	return nil
 }
 
@@ -60,14 +61,14 @@ func (nc *MockNetConn) RemoteAddr() net.Addr {
 // the deadline after successful Read or Write calls.
 //
 // A zero value for t means I/O operations will not time out.
-func (nc *MockNetConn) SetDeadline(t time.Time) error {
+func (nc *NetConn) SetDeadline(t time.Time) error {
 	return nil
 }
 
 // SetReadDeadline sets the deadline for future Read calls
 // and any currently-blocked Read call.
 // A zero value for t means Read will not time out.
-func (nc *MockNetConn) SetReadDeadline(t time.Time) error {
+func (nc *NetConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
@@ -76,6 +77,6 @@ func (nc *MockNetConn) SetReadDeadline(t time.Time) error {
 // Even if write times out, it may return n > 0, indicating that
 // some of the data was successfully written.
 // A zero value for t means Write will not time out.
-func (nc *MockNetConn) SetWriteDeadline(t time.Time) error {
+func (nc *NetConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
