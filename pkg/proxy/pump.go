@@ -7,8 +7,15 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
-// Pump
-type Pump struct {
+// Pump interface to Start the Pump and fetch the Nozzle (channel)
+type Pump interface {
+	Nozzle() Nozzle
+	Send(cp packets.ControlPacket) error
+	Start(ctx context.Context) error
+}
+
+// pumpImpl implements the Pump interface
+type pumpImpl struct {
 	// The network connection
 	conn net.Conn
 
@@ -17,22 +24,23 @@ type Pump struct {
 }
 
 // NewPump create a new bi-directional communication channel between the client and broker
-func NewPump(conn net.Conn) *Pump {
-	return &Pump{
+func NewPump(conn net.Conn) Pump {
+	return &pumpImpl{
 		conn: conn,
 		hose: NewHose(conn, nil),
 	}
 }
 
-func (p *Pump) Nozzle() Nozzle {
+func (p *pumpImpl) Nozzle() Nozzle {
 	return p.hose.GetNozzle()
 }
 
-// Write to the
-func (p *Pump) Write(cp packets.ControlPacket) {
-	cp.Write(p.conn)
+// Send the control packet to the Pump
+func (p *pumpImpl) Send(cp packets.ControlPacket) error {
+	return cp.Write(p.conn)
 }
 
-func (p *Pump) Run(ctx context.Context) error {
+// Start the Pump
+func (p *pumpImpl) Start(ctx context.Context) error {
 	return p.hose.Flow(ctx)
 }

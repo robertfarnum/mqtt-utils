@@ -16,6 +16,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Service listens for the incoming MQTT client connections and start the proxy
 type Service struct {
 	TCPListen string
 	WSListen  string
