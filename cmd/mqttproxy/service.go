@@ -11,9 +11,9 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/eclipse/paho.mqtt.golang/packets"
 	"github.com/fatih/color"
 	"github.com/gorilla/websocket"
+	"github.com/robertfarnum/mqtt-utils/pkg/proxy"
 )
 
 // Service listens for the incoming MQTT client connections and start the proxy
@@ -25,19 +25,58 @@ type Service struct {
 	IsTrace   bool
 }
 
-func printPacketInfo(action string, cp packets.ControlPacket, err error) {
+func printPacketInfo(action string, p proxy.Packet) {
 	now := time.Now().UTC()
 
 	color.Blue("%s at %s:\n", action, now.String())
 
-	if err != nil {
-		color.Red("	Error: %v\n", err)
+	cp := p.GetControlPacket()
+	es := p.GetErrStatus()
+
+	if es != nil {
+		color.Red("	Error: %v\n", es)
 	} else if cp != nil {
 		color.Green("	Packet: %s\n", cp.String())
 		color.Green("	Details: %v\n", cp.Details())
 	}
 
 	fmt.Println()
+}
+
+type brokerProcessor struct{}
+
+func (bp *brokerProcessor) Process(ctx context.Context, p proxy.Packet) (*proxy.Packets, error) {
+	printPacketInfo("RCVD", p)
+
+	es := p.GetErrStatus()
+	if es != nil {
+		return nil, es
+	}
+
+	np := proxy.NewPacket(p.GetControlPacket(), proxy.Forward)
+
+	pkts := &proxy.Packets{}
+	pkts.Add(np)
+
+	return pkts, nil
+}
+
+type clientProcessor struct{}
+
+func (cp *clientProcessor) Process(ctx context.Context, p proxy.Packet) (*proxy.Packets, error) {
+	printPacketInfo("SENT", p)
+
+	es := p.GetErrStatus()
+	if es != nil {
+		return nil, es
+	}
+
+	np := proxy.NewPacket(p.GetControlPacket(), proxy.Forward)
+
+	pkts := &proxy.Packets{}
+	pkts.Add(np)
+
+	return pkts, nil
 }
 
 func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
@@ -57,7 +96,10 @@ func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.R
 	defer brokerConn.Close()
 	defer clientConn.Close()
 
-	proxy := NewProxy(clientConn, brokerConn)
+	clientEndpoint := proxy.NewEndpoint(clientConn, &clientProcessor{})
+	brokerEndpoint := proxy.NewEndpoint(brokerConn, &brokerProcessor{})
+
+	proxy := proxy.NewProxy(clientEndpoint, brokerEndpoint)
 
 	return proxy.Start(ctx)
 }

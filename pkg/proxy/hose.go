@@ -10,8 +10,6 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
-type ErrStatus error
-
 const (
 	// DefaultReadTimeout is the default read timeout for DefaultHostConfig
 	DefaultReadTimeout = 10 * time.Second
@@ -19,33 +17,14 @@ const (
 	DefaultWriteTimeout = 10 * time.Second
 )
 
+// HostStatus of Hose in Packet
+type HostStatus error
+
 var (
-	ErrClosed   ErrStatus = fmt.Errorf("closed")
-	ErrCanceled ErrStatus = fmt.Errorf("cancled")
-	ErrTimeout  ErrStatus = fmt.Errorf("timeout")
+	ErrClosed   HostStatus = fmt.Errorf("closed")
+	ErrCanceled HostStatus = fmt.Errorf("canceled")
+	ErrTimeout  HostStatus = fmt.Errorf("timeout")
 )
-
-// Packet interface provides access to the control packet or error
-type Packet interface {
-	GetControlPacket() packets.ControlPacket
-	GetErrStatus() ErrStatus
-}
-
-// packetImpl wraps an MQTT control packet or error
-type packetImpl struct {
-	cp  packets.ControlPacket
-	err error
-}
-
-// GetControlPacket retrieves the control packet
-func (p *packetImpl) GetControlPacket() packets.ControlPacket {
-	return p.cp
-}
-
-// GetErrStatus retrieves the packet error
-func (p *packetImpl) GetErrStatus() ErrStatus {
-	return p.err
-}
 
 // Nozzle is the channel type for the Packet output channel
 type Nozzle chan Packet
@@ -112,8 +91,9 @@ func (h *hoseImpl) Flow(ctx context.Context) error {
 		}
 
 		p := &packetImpl{
-			cp:  cp,
-			err: err,
+			cp:    cp,
+			err:   err,
+			route: Process,
 		}
 
 		select {
