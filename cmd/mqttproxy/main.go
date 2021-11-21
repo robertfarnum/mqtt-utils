@@ -22,5 +22,5 @@ func main() {
 
 	fmt.Printf("%v\n", service)
 
-	service.Start(context.Background())
+	service.Run(context.Background())
 }

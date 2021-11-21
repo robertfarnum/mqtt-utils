@@ -2,96 +2,64 @@ package proxy
 
 import (
 	"context"
-	"fmt"
-	"net"
+	"errors"
 )
 
 var (
-	// ErrBadClientEndpoint is a bad client endpoint error
-	ErrBadClientEndpoint = fmt.Errorf("bad client endpoint")
-	// ErrBadBrokerEndpoint is a bad broker endpoint error
-	ErrBadBrokerEndpoint = fmt.Errorf("bad broker endpoint")
-	// ErrForwardEndpointNotSet is a forward endpoint not set error
-	ErrForwardEndpointNotSet = fmt.Errorf("forward endpoint not set")
-	// ErrLoopbackEndpointNotSet is a loopback endpoint not set error
-	ErrLoopbackEndpointNotSet = fmt.Errorf("loopback endpoint not set")
+	// ErrProxyForwardEndpointNotSet is a forward endpoint not set error
+	ErrProxyForwardEndpointNotSet = errors.New("forward endpoint not set")
+	// ErrProxyLoopbackEndpointNotSet is a loopback endpoint not set error
+	ErrProxyLoopbackEndpointNotSet = errors.New("loopback endpoint not set")
 	// ErrProcessorNotSet is a endpoint processor not set error
-	ErrProcessorNotSet = fmt.Errorf("endpoint processor not set")
-	// ErrInvalidPacketRoute is a invalid packet route error
-	ErrInvalidPacketRoute = fmt.Errorf("invalid packet route")
+	ErrProcessorNotSet = errors.New("endpoint processor not set")
+	// ErrProxyInvalidPacketRoute is a invalid packet route error
+	ErrProxyInvalidPacketRoute = errors.New("invalid packet route")
+	// ErrProxyClientDisconnect indicates the client has disconnected
+	ErrProxyClientDisconnect = errors.New("client disconnect")
+	// ErrProxyBrokerDisconnect indicates the broker has disconnected
+	ErrProxyBrokerDisconnect = errors.New("broker disconnect")
+	// ErrProxyPacketNotSet indicates the packet is not set
+	ErrProxyPacketNotSet = errors.New("packet is not set")
 )
-
-// Processor interface used to process Packet(s)
-type Processor interface {
-	Process(ctx context.Context, p Packet) (pkts *Packets, err error)
-}
-
-// Endpoint interface for the client or broker
-type Endpoint interface {
-	getConn() net.Conn
-	getProcessor() Processor
-}
-
-// endpointImpl used to store endpoint (client or broker) connection and processor information
-type endpointImpl struct {
-	conn      net.Conn
-	processor Processor
-}
-
-// NewEndpoint creates a new Endpoint with a network connection and processor
-func NewEndpoint(conn net.Conn, processor Processor) Endpoint {
-	return &endpointImpl{
-		conn:      conn,
-		processor: processor,
-	}
-}
-
-// getConn return the network connection of an endpoint
-func (e *endpointImpl) getConn() net.Conn {
-	return e.conn
-}
-
-// getProcessor returns the processor for and endpoint
-func (e *endpointImpl) getProcessor() Processor {
-	return e.processor
-}
 
 // Proxy for client and broker
 type Proxy interface {
-	Start(ctx context.Context) error
+	Run(ctx context.Context) error
 }
 
 // proxyImpl implements the Proxy interface
 type proxyImpl struct {
-	client Endpoint
-	broker Endpoint
+	channelConfig ChannelConfig
 }
 
 // NewProxy creates a new proxy between the client and broker
-func NewProxy(client Endpoint, broker Endpoint) Proxy {
+func NewProxy(channelConfig ChannelConfig) Proxy {
 	return &proxyImpl{
-		client: client,
-		broker: broker,
+		channelConfig: channelConfig,
 	}
 }
 
 // processPacket will process a incoming Packet and then forward or loopback output Packet(s)
 func processPacket(ctx context.Context, p Packet, loopback Endpoint, forward Endpoint) (err error) {
+	if p == nil {
+		return ErrProxyPacketNotSet
+	}
+
 	if loopback == nil {
-		return ErrLoopbackEndpointNotSet
+		return ErrProxyLoopbackEndpointNotSet
 	}
 
 	if forward == nil {
-		return ErrForwardEndpointNotSet
+		return ErrProxyForwardEndpointNotSet
 	}
 
-	processor := loopback.getProcessor()
+	processor := loopback.GetProcessor()
 	if processor == nil {
 		return ErrProcessorNotSet
 	}
 
 	if p.getRoute() != Process {
-		return ErrInvalidPacketRoute
+		return ErrProxyInvalidPacketRoute
 	}
 
 	pkts, err := processor.Process(ctx, p)
@@ -104,35 +72,26 @@ func processPacket(ctx context.Context, p Packet, loopback Endpoint, forward End
 		cp := pkt.GetControlPacket()
 		switch route {
 		case Process:
-			return ErrInvalidPacketRoute
+			return ErrProxyInvalidPacketRoute
 		case Forward:
-			cp.Write(forward.getConn())
+			cp.Write(forward.GetConn())
 		case Loopback:
-			cp.Write(loopback.getConn())
+			cp.Write(loopback.GetConn())
 		}
 	}
 
 	return nil
 }
 
-// Start the proxy
-func (p *proxyImpl) Start(ctx context.Context) error {
-
-	if p.client == nil || p.client.getConn() == nil {
-		return ErrBadClientEndpoint
-	}
-
-	if p.client == nil || p.client.getConn() == nil {
-		return ErrBadBrokerEndpoint
-	}
-
-	s := NewStation(p.client.getConn(), p.broker.getConn())
+// Run the proxy
+func (p *proxyImpl) Run(ctx context.Context) error {
+	ch := NewChannel(p.channelConfig)
 	ctx, cancel := context.WithCancel(ctx)
-
 	errs := &Errors{}
 
+	// The client packet processing loop
 	go func() {
-		n := s.GetClientPump().Nozzle()
+		n := ch.GetClientNozzle()
 
 	LOOP:
 		for {
@@ -140,18 +99,23 @@ func (p *proxyImpl) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				break LOOP
 			case pkt := <-n:
-				err := processPacket(ctx, pkt, p.client, p.broker)
+				if pkt == nil {
+					errs.Add(ErrProxyClientDisconnect)
+					break LOOP
+				}
+				err := processPacket(ctx, pkt, p.channelConfig.ClientEndpoint, p.channelConfig.BrokerEndpoint)
 				if err != nil {
 					errs.Add(err)
-					cancel()
-					return
+					break LOOP
 				}
 			}
 		}
+		cancel()
 	}()
 
+	// The broker packet processing loop
 	go func() {
-		n := s.GetBrokerPump().Nozzle()
+		n := ch.GetBrokerNozzle()
 
 	LOOP:
 		for {
@@ -159,17 +123,21 @@ func (p *proxyImpl) Start(ctx context.Context) error {
 			case <-ctx.Done():
 				break LOOP
 			case pkt := <-n:
-				err := processPacket(ctx, pkt, p.broker, p.client)
+				if pkt == nil {
+					errs.Add(ErrProxyBrokerDisconnect)
+					break LOOP
+				}
+				err := processPacket(ctx, pkt, p.channelConfig.BrokerEndpoint, p.channelConfig.ClientEndpoint)
 				if err != nil {
 					errs.Add(err)
-					cancel()
-					return
+					break LOOP
 				}
 			}
 		}
+		cancel()
 	}()
 
-	err := s.Run(ctx, cancel)
+	err := ch.Run(ctx, cancel)
 	errs.Add(err)
 
 	return errs

@@ -1,6 +1,8 @@
 package proxy
 
 import (
+	"io"
+
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
@@ -24,9 +26,15 @@ const (
 
 // NewPacket creates a packet with a route
 func NewPacket(cp packets.ControlPacket, route Route) Packet {
+	return NewPacketWithError(cp, route, nil)
+}
+
+// NewPacketWithError creates a packet with a route and error
+func NewPacketWithError(cp packets.ControlPacket, route Route, err error) Packet {
 	return &packetImpl{
 		cp:    cp,
 		route: route,
+		err:   err,
 	}
 }
 
@@ -57,8 +65,56 @@ type Packets struct {
 	packets []Packet
 }
 
-func (pkts *Packets) Add(p Packet) {
+func (pkts *Packets) Add(p ...Packet) {
 	if pkts != nil {
-		pkts.packets = append(pkts.packets, p)
+		pkts.packets = append(pkts.packets, p...)
 	}
+}
+
+func (pkts *Packets) AddPackets(ps *Packets) {
+	if pkts == nil || ps == nil || ps.packets == nil {
+		return
+	}
+
+	pkts.packets = append(pkts.packets, ps.packets...)
+}
+
+func (pkts *Packets) Len() int {
+	return len(pkts.packets)
+}
+
+type ProcessControlPacketType string
+
+const (
+	ReadyPacketType ProcessControlPacketType = "ready"
+)
+
+func NewProcessControlPacket(pt ProcessControlPacketType) packets.ControlPacket {
+	return &ProcessControlPacket{
+		packetType: pt,
+	}
+}
+
+type ProcessControlPacket struct {
+	packets.ControlPacket
+	packetType ProcessControlPacketType
+}
+
+func (p *ProcessControlPacket) Write(w io.Writer) error {
+	return nil
+}
+
+func (p *ProcessControlPacket) Unpack(io.Reader) error {
+	return nil
+}
+func (p *ProcessControlPacket) String() string {
+	return string(p.packetType)
+}
+
+func (p *ProcessControlPacket) Details() packets.Details {
+	return packets.Details{}
+}
+
+func (p *ProcessControlPacket) GetPacketType() ProcessControlPacketType {
+	return p.packetType
 }

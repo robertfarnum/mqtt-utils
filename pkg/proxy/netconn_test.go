@@ -1,43 +1,107 @@
-package proxy_test
+package proxy
 
 import (
+	"errors"
+	"io"
 	"net"
+	"os"
 	"time"
 )
 
-// NetConn test structure
+type NetConnError error
+
+var (
+	ErrNetConnReaderNotSet = errors.New("reader not set")
+	ErrNetConnWriterNotSet = errors.New("writer not set")
+)
+
+// NetConn test structure implement net.Conn
 type NetConn struct {
 	net.Conn
+	Reader              io.Reader
+	Writer              io.Writer
+	CloseErr            error
+	LocalAddrRet        net.Addr
+	RemoteAddrRet       net.Addr
+	SetDeadlineErr      error
+	SetReadDeadlineErr  error
+	readDeadline        *time.Time
+	SetWriteDeadlineErr error
+	writeDeadline       *time.Time
 }
 
 // Read reads data from the connection.
 // Read can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetReadDeadline.
 func (nc *NetConn) Read(b []byte) (n int, err error) {
-	return 0, nil
+	if nc.Reader == nil {
+		return 0, ErrNetConnReaderNotSet
+	}
+
+	if nc.readDeadline != nil {
+		d := nc.readDeadline.Sub(time.Now())
+		ch := make(chan bool)
+		n = 0
+		err = nil
+		go func() {
+			n, err = nc.Reader.Read(b)
+			ch <- true
+		}()
+		select {
+		case <-ch:
+			return
+		case <-time.After(d):
+			return 0, os.ErrDeadlineExceeded
+		}
+		return
+	}
+
+	return nc.Reader.Read(b)
 }
 
 // Write writes data to the connection.
 // Write can be made to time out and return an error after a fixed
 // time limit; see SetDeadline and SetWriteDeadline.
 func (nc *NetConn) Write(b []byte) (n int, err error) {
-	return 0, nil
+	if nc.Writer == nil {
+		return 0, ErrNetConnWriterNotSet
+	}
+
+	if nc.writeDeadline != nil {
+		d := nc.writeDeadline.Sub(time.Now())
+		ch := make(chan bool)
+		n = 0
+		err = nil
+		go func() {
+			n, err = nc.Writer.Write(b)
+			ch <- true
+		}()
+		select {
+		case <-ch:
+			return
+		case <-time.After(d):
+			return 0, os.ErrDeadlineExceeded
+		}
+		return
+	}
+
+	return nc.Writer.Write(b)
 }
 
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked and return errors.
 func (nc *NetConn) Close() error {
-	return nil
+	return nc.CloseErr
 }
 
 // LocalAddr returns the local network address.
 func (nc *NetConn) LocalAddr() net.Addr {
-	return nil
+	return nc.LocalAddrRet
 }
 
 // RemoteAddr returns the remote network address.
 func (nc *NetConn) RemoteAddr() net.Addr {
-	return nil
+	return nc.RemoteAddrRet
 }
 
 // SetDeadline sets the read and write deadlines associated
@@ -61,15 +125,26 @@ func (nc *NetConn) RemoteAddr() net.Addr {
 // the deadline after successful Read or Write calls.
 //
 // A zero value for t means I/O operations will not time out.
-func (nc *NetConn) SetDeadline(t time.Time) error {
-	return nil
+func (nc *NetConn) SetDeadline(t time.Time) (err error) {
+	err = nc.SetReadDeadline(t)
+	if err != nil {
+		return err
+	}
+	err = nc.SetWriteDeadline(t)
+	if err != nil {
+		return err
+	}
+
+	return nc.SetDeadlineErr
 }
 
 // SetReadDeadline sets the deadline for future Read calls
 // and any currently-blocked Read call.
 // A zero value for t means Read will not time out.
 func (nc *NetConn) SetReadDeadline(t time.Time) error {
-	return nil
+	nc.readDeadline = &t
+
+	return nc.SetReadDeadlineErr
 }
 
 // SetWriteDeadline sets the deadline for future Write calls
@@ -78,5 +153,7 @@ func (nc *NetConn) SetReadDeadline(t time.Time) error {
 // some of the data was successfully written.
 // A zero value for t means Write will not time out.
 func (nc *NetConn) SetWriteDeadline(t time.Time) error {
-	return nil
+	nc.writeDeadline = &t
+
+	return nc.SetWriteDeadlineErr
 }

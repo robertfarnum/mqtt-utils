@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/fatih/color"
-	"github.com/gorilla/websocket"
 	"github.com/robertfarnum/mqtt-utils/pkg/network"
 	"github.com/robertfarnum/mqtt-utils/pkg/proxy"
+
+	"github.com/gorilla/websocket"
 )
 
 // Service listens for the incoming MQTT client connections and start the proxy
@@ -23,60 +23,6 @@ type Service struct {
 	Broker    string
 	IsDebug   bool
 	IsTrace   bool
-}
-
-func printPacketInfo(action string, p proxy.Packet) {
-	now := time.Now().UTC()
-
-	color.Blue("%s at %s:\n", action, now.String())
-
-	cp := p.GetControlPacket()
-	es := p.GetErrStatus()
-
-	if es != nil {
-		color.Red("	Error: %v\n", es)
-	} else if cp != nil {
-		color.Green("	Packet: %s\n", cp.String())
-		color.Green("	Details: %v\n", cp.Details())
-	}
-
-	fmt.Println()
-}
-
-type brokerProcessor struct{}
-
-func (bp *brokerProcessor) Process(ctx context.Context, p proxy.Packet) (*proxy.Packets, error) {
-	printPacketInfo("RCVD", p)
-
-	es := p.GetErrStatus()
-	if es != nil {
-		return nil, es
-	}
-
-	np := proxy.NewPacket(p.GetControlPacket(), proxy.Forward)
-
-	pkts := &proxy.Packets{}
-	pkts.Add(np)
-
-	return pkts, nil
-}
-
-type clientProcessor struct{}
-
-func (cp *clientProcessor) Process(ctx context.Context, p proxy.Packet) (*proxy.Packets, error) {
-	printPacketInfo("SENT", p)
-
-	es := p.GetErrStatus()
-	if es != nil {
-		return nil, es
-	}
-
-	np := proxy.NewPacket(p.GetControlPacket(), proxy.Forward)
-
-	pkts := &proxy.Packets{}
-	pkts.Add(np)
-
-	return pkts, nil
 }
 
 func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.ResponseWriter, r *http.Request) error {
@@ -92,16 +38,24 @@ func (service *Service) serve(ctx context.Context, clientConn net.Conn, w http.R
 	if err != nil {
 		return err
 	}
-
+	brokerEndpoint := proxy.NewEndpoint(proxy.EndpointConfig{
+		Conn:      brokerConn,
+		Processor: &brokerProcessor{},
+	})
 	defer brokerConn.Close()
+
+	clientEndpoint := proxy.NewEndpoint(proxy.EndpointConfig{
+		Conn:      clientConn,
+		Processor: &clientProcessor{},
+	})
 	defer clientConn.Close()
 
-	clientEndpoint := proxy.NewEndpoint(clientConn, &clientProcessor{})
-	brokerEndpoint := proxy.NewEndpoint(brokerConn, &brokerProcessor{})
+	proxy := proxy.NewProxy(proxy.ChannelConfig{
+		ClientEndpoint: clientEndpoint,
+		BrokerEndpoint: brokerEndpoint,
+	})
 
-	proxy := proxy.NewProxy(clientEndpoint, brokerEndpoint)
-
-	return proxy.Start(ctx)
+	return proxy.Run(ctx)
 }
 
 func (service *Service) getBrokerConn(_ context.Context, w http.ResponseWriter, r *http.Request) (net.Conn, error) {
@@ -202,7 +156,7 @@ func (service *Service) startTCPService(ctx context.Context) {
 	}
 }
 
-func (service *Service) Start(ctx context.Context) {
+func (service *Service) Run(ctx context.Context) {
 	if service.IsDebug {
 		fmt.Println("verbose mode enabled")
 	}
